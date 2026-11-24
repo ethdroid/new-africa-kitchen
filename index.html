@@ -357,6 +357,11 @@ main,header,footer,nav{position:relative;z-index:1}
 .fan button:hover{transform:translateY(-8px) rotate(-1.5deg);box-shadow:0 26px 40px -24px rgba(0,0,0,.9)}
 .fan button span{position:absolute;left:8px;right:8px;bottom:8px;font-size:.68rem;font-weight:700;padding:5px 8px;border-radius:8px;background:rgba(18,10,5,.8);color:var(--cream);text-align:center;backdrop-filter:blur(6px)}
 
+.sold .img,.sold .dish-img{filter:grayscale(.85) brightness(.7)}
+.sold .name,.sold .dish-name{opacity:.65}
+.sold-label{color:var(--closed)!important;font-size:.82rem;text-transform:uppercase;letter-spacing:.06em}
+.row.sold .name{text-decoration:line-through;text-decoration-color:rgba(242,135,122,.6)}
+
 /* ---------- VISIT ---------- */
 .visit{display:grid;grid-template-columns:1fr 1.25fr;gap:16px}
 .hours-card{border-radius:var(--radius);padding:30px;background:linear-gradient(180deg,var(--surface-2),var(--surface));border:1px solid var(--line)}
@@ -899,6 +904,11 @@ var IMG = {"n_attieke": "data:image/webp;base64,UklGRtqRAABXRUJQVlA4IM6RAABwwQOd
 (function(){
 var ORDER = 'https://order.toasttab.com/online/new-africa-4734-west-glendale-ave';
 
+/* ===== LIVE MENU =====
+   Paste the Google Sheet "Publish to web" CSV link between the quotes.
+   Leave it empty to use the menu built into this file. */
+var SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSAR1I4Bg9hjBkY76sQPKRRri9B2gpjyRi3sKjX_VNg8Kk4uObS_gWqohPHbK3rHQkCwBzPS0f-pyv9/pub?gid=415623385&single=true&output=csv';
+
 /* ---------- data ---------- */
 var MENU = [
   /* mains */
@@ -990,11 +1000,12 @@ function $(s,r){return (r||document).querySelector(s)}
 function $$(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 function money(p){return '$'+(p%1?p.toFixed(2):p.toFixed(0))}
-function priceHTML(it){return '<span class="price">'+(it.f?'<small>from</small>':'')+money(it.p)+'</span>'}
+function priceHTML(it){if(it.so)return '<span class="price sold-label">Sold out</span>';if(isNaN(it.p))return '';return '<span class="price">'+(it.f?'<small>from</small>':'')+money(it.p)+'</span>'}
 function szHTML(it){return it.sz?' <span class="sz">'+esc(it.sz)+'</span>':''}
-function bg(key){return IMG[key]?'background-image:url('+IMG[key]+')':''}
+function src(key){if(!key)return '';if(IMG[key])return IMG[key];if(IMG['n_'+key])return IMG['n_'+key];if(/^https?:\/\//i.test(key))return key;return ''}
+function bg(key){var s=src(key);return s?"background-image:url('"+s.replace(/'/g,'%27')+"')":''}
 function byName(n){for(var i=0;i<MENU.length;i++){if(MENU[i].n===n)return MENU[i]}}
-function byImg(k){for(var i=0;i<MENU.length;i++){if(MENU[i].hs===k||MENU[i].img===k)return MENU[i]}}
+function byImg(k){for(var i=0;i<MENU.length;i++){if(MENU[i].hs===k||MENU[i].img===k)return MENU[i]}for(var j=0;j<(BUILTIN||[]).length;j++){if(BUILTIN[j].hs===k||BUILTIN[j].img===k)return BUILTIN[j]}}
 function fmtTime(h){var hr=Math.floor(h),m=Math.round((h-hr)*60);var ap=hr>=12?'PM':'AM';var h12=hr%12||12;return h12+':'+(m<10?'0':'')+m+' '+ap}
 function range(d){return fmtTime(d.o)+' – '+fmtTime(d.c)}
 
@@ -1069,8 +1080,8 @@ function setNow(i){
   var nm=$('#nowName'),pr=$('#nowPrice'),th=$('#nowThumb');
   nm.style.opacity=0;th.style.opacity=0;
   setTimeout(function(){
-    nm.textContent=nowDish.n;pr.innerHTML=(nowDish.f?'From ':'')+money(nowDish.p);
-    th.style.backgroundImage='url('+IMG[SLIDES[i]]+')';
+    nm.textContent=nowDish.n;pr.innerHTML=nowDish.so?'Sold out today':isNaN(nowDish.p)?'&nbsp;':(nowDish.f?'From ':'')+money(nowDish.p);
+    th.style.backgroundImage='url('+src(SLIDES[i])+')';
     nm.style.opacity=1;th.style.opacity=1;
   },250);
 }
@@ -1090,26 +1101,36 @@ $('#track').innerHTML=run+run;
 
 /* ---------- favorites rail ---------- */
 function dishCard(it){
-  return '<button class="dish" data-dish="'+esc(it.n)+'">'
+  return '<button class="dish'+(it.so?' sold':'')+'" data-dish="'+esc(it.n)+'">'
     +'<div class="dish-img" style="'+bg(it.img)+'">'+(it.h?'<span class="tag halal">Halal</span>':(it.o?'<span class="tag">'+esc(it.o)+'</span>':''))+'</div>'
     +'<div class="dish-body"><div class="dish-row"><span class="dish-name">'+esc(it.n)+szHTML(it)+'</span>'+priceHTML(it)+'</div>'
     +'<p class="dish-desc">'+esc(it.d)+'</p></div></button>';
 }
 var rail=$('#rail');
-rail.innerHTML=FAVS.map(function(n){return dishCard(byName(n))}).join('');
+function renderRail(){
+  var favs=MENU.filter(function(m){return m.fav&&m.img});
+  if(!favs.length)favs=FAVS.map(byName).filter(Boolean);
+  rail.innerHTML=favs.map(dishCard).join('');
+  rail.scrollLeft=0;railBtns();
+}
 function railStep(dir){var c=rail.querySelector('.dish');var w=c?c.getBoundingClientRect().width+18:320;rail.scrollBy({left:dir*w*2,behavior:'smooth'})}
 $('#railPrev').addEventListener('click',function(){railStep(-1)});
 $('#railNext').addEventListener('click',function(){railStep(1)});
 function railBtns(){$('#railPrev').disabled=rail.scrollLeft<8;$('#railNext').disabled=rail.scrollLeft+rail.clientWidth>=rail.scrollWidth-8}
-rail.addEventListener('scroll',railBtns,{passive:true});window.addEventListener('resize',railBtns);railBtns();
+rail.addEventListener('scroll',railBtns,{passive:true});window.addEventListener('resize',railBtns);renderRail();
 
 /* ---------- full menu ---------- */
 var cat='all',query='';
 var catsEl=$('#cats');
-catsEl.innerHTML=CATS.map(function(c){
-  var count=c.k==='all'?MENU.length:MENU.filter(function(m){return m.c===c.k}).length;
-  return '<button class="cat'+(c.k==='all'?' on':'')+'" role="tab" aria-selected="'+(c.k==='all')+'" data-cat="'+c.k+'">'+c.l+'<span class="n">'+count+'</span></button>';
-}).join('');
+function renderCats(){
+  if(cat!=='all'&&!CATS.some(function(c){return c.k===cat}))cat='all';
+  catsEl.innerHTML=CATS.map(function(c){
+    var count=c.k==='all'?MENU.length:MENU.filter(function(m){return m.c===c.k}).length;
+    if(c.k!=='all'&&!count)return '';
+    return '<button class="cat'+(c.k===cat?' on':'')+'" role="tab" aria-selected="'+(c.k===cat)+'" data-cat="'+c.k+'">'+esc(c.l)+'<span class="n">'+count+'</span></button>';
+  }).join('');
+}
+renderCats();
 catsEl.addEventListener('click',function(e){
   var b=e.target.closest('.cat');if(!b)return;
   cat=b.getAttribute('data-cat');
@@ -1129,7 +1150,7 @@ function renderMenu(){
   });
   var withImg=items.filter(function(m){return m.img}),noImg=items.filter(function(m){return !m.img});
   $('#grid').innerHTML=withImg.map(function(it){
-    return '<button class="mcard" data-dish="'+esc(it.n)+'">'
+    return '<button class="mcard'+(it.so?' sold':'')+'" data-dish="'+esc(it.n)+'">'
       +'<div class="img" style="'+bg(it.img)+'">'+(it.h?'<span class="tag halal num">Halal</span>':it.sp?'<span class="tag hot num">Spicy</span>':(it.num?'<span class="tag num">No. '+it.num+'</span>':''))+'</div>'
       +'<div class="body"><span class="name">'+esc(it.n)+szHTML(it)+'</span>'
       +(it.d?'<span class="desc">'+esc(it.d)+'</span>':'')
@@ -1137,7 +1158,7 @@ function renderMenu(){
   }).join('');
   $('#grid').style.display=withImg.length?'':'none';
   $('#list').innerHTML=noImg.map(function(it){
-    return '<div class="row"><div class="info"><div class="name">'+(it.num?'<span class="num">#'+it.num+'</span>':'')+esc(it.n)+szHTML(it)+(it.sp?' <span class="hot">Spicy</span>':'')+'</div>'
+    return '<div class="row'+(it.so?' sold':'')+'"><div class="info"><div class="name">'+(it.num?'<span class="num">#'+it.num+'</span>':'')+esc(it.n)+szHTML(it)+(it.sp?' <span class="hot">Spicy</span>':'')+'</div>'
       +(it.d?'<div class="desc">'+esc(it.d)+'</div>':'')+'</div>'+priceHTML(it)+'</div>';
   }).join('');
   $('#moreTitle').style.display=noImg.length?'':'none';
@@ -1146,22 +1167,88 @@ function renderMenu(){
 }
 renderMenu();
 
+/* ---------- live menu from Google Sheet ---------- */
+function parseCSV(text){
+  var rows=[],row=[],f='',q=false;
+  for(var i=0;i<text.length;i++){
+    var ch=text[i];
+    if(q){
+      if(ch==='"'){if(text[i+1]==='"'){f+='"';i++}else q=false}
+      else f+=ch;
+    }else if(ch==='"')q=true;
+    else if(ch===','){row.push(f);f=''}
+    else if(ch==='\n'||ch==='\r'){
+      if(ch==='\r'&&text[i+1]==='\n')i++;
+      row.push(f);rows.push(row);row=[];f='';
+    }else f+=ch;
+  }
+  if(f!==''||row.length){row.push(f);rows.push(row)}
+  return rows;
+}
+function yes(v){return /^(true|yes|y|x|1|✓)$/i.test(String(v||'').trim())}
+function slug(s){return String(s).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'other'}
+function rowsToMenu(rows){
+  var head=rows.shift().map(function(h){return h.trim().toLowerCase()});
+  function col(r,name){var i=head.indexOf(name);return i<0?'':String(r[i]||'').trim()}
+  var cats=[{k:'all',l:'All'}],seen={};
+  var items=[];
+  rows.forEach(function(r){
+    var name=col(r,'name');
+    if(!name||yes(col(r,'hide')))return;
+    var label=col(r,'category')||'Other',k=slug(label);
+    var known=CATS.filter(function(c){return c.l.toLowerCase()===label.toLowerCase()||c.k===k})[0];
+    if(known)k=known.k;
+    if(!seen[k]){seen[k]=1;cats.push({k:k,l:known?known.l:label})}
+    var price=parseFloat(col(r,'price').replace(/[^0-9.]/g,''));
+    var photo=col(r,'photo');
+    var it={c:k,n:name,p:price,sz:col(r,'size'),d:col(r,'description'),o:col(r,'origin'),
+      img:src(photo)?photo:'',h:yes(col(r,'halal')),sp:yes(col(r,'spicy')),fav:yes(col(r,'favorite')),so:yes(col(r,'sold out'))};
+    var num=parseInt(col(r,'number'),10);if(num)it.num=num;
+    var match=BUILTIN.filter(function(b){return b.img&&(b.img===photo||b.img==='n_'+photo)})[0];
+    if(match&&match.hs)it.hs=match.hs;
+    items.push(it);
+  });
+  return {items:items,cats:cats};
+}
+var BUILTIN=MENU.slice();
+function loadSheet(){
+  if(!SHEET_CSV_URL)return;
+  var url=SHEET_CSV_URL+(SHEET_CSV_URL.indexOf('?')>-1?'&':'?')+'_='+Date.now();
+  fetch(url,{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text()}).then(function(text){
+    var rows=parseCSV(text).filter(function(r){return r.some(function(c){return c.trim()})});
+    if(rows.length<2)throw new Error('sheet is empty');
+    var out=rowsToMenu(rows);
+    if(out.items.length<3)throw new Error('only '+out.items.length+' items, keeping built-in menu');
+    MENU.length=0;Array.prototype.push.apply(MENU,out.items);
+    CATS.length=0;Array.prototype.push.apply(CATS,out.cats);
+    renderCats();renderMenu();renderRail();setNow(cur);
+    document.documentElement.setAttribute('data-menu','sheet');
+  }).catch(function(err){
+    console.warn('Live menu not loaded, using built-in menu:',err.message);
+    document.documentElement.setAttribute('data-menu','builtin');
+  });
+}
+loadSheet();
+
 /* ---------- dish modal ---------- */
 var dm=$('#dishModal'),lastFocus=null;
 function openModal(m){lastFocus=document.activeElement;m.classList.add('open');document.body.style.overflow='hidden';var x=m.querySelector('[data-close]');if(x)x.focus()}
 function closeModal(m){m.classList.remove('open');if(!$('.modal.open'))document.body.style.overflow='';if(lastFocus)lastFocus.focus()}
 function openDish(it){
   if(!it)return;
-  $('#dmPic').style.backgroundImage='url('+IMG[it.img]+')';
+  $('#dmPic').style.cssText=bg(it.img)||'background:var(--surface-2)';
   $('#dmName').innerHTML=esc(it.n)+szHTML(it);
   $('#dmDesc').textContent=it.d||'';
-  $('#dmPrice').innerHTML=(it.f?'<span style="font-size:.5em;color:var(--dim);font-family:var(--f-body);font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-right:6px">From</span>':'')+money(it.p);
+  $('#dmPrice').innerHTML=it.so?'Sold out today':isNaN(it.p)?'':(it.f?'<span style="font-size:.5em;color:var(--dim);font-family:var(--f-body);font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-right:6px">From</span>':'')+money(it.p);
   var meta='';
   if(it.num)meta+='<span class="tag">No. '+it.num+'</span>';
   if(it.h)meta+='<span class="tag halal">Halal</span>';
   if(it.sp)meta+='<span class="tag hot">Spicy</span>';
   if(it.o)meta+='<span class="tag">'+esc(it.o)+'</span>';
   $('#dmMeta').innerHTML=meta;
+  var ob=$('#dishModal .btn-primary');
+  ob.style.display=it.so?'none':'';
+  $('#dishModal .note').textContent=it.so?'This one is sold out today. Check back soon, or browse the rest of the menu.':'Opens our online ordering page for pickup or delivery.';
   openModal(dm);
 }
 document.addEventListener('click',function(e){
